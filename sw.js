@@ -1,4 +1,4 @@
-const CACHE = 'lifeos-mobile-v1';
+const CACHE = 'lifeos-mobile-v2';
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['./','./index.html','./style.css','./app.js','./manifest.webmanifest'])).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lifeos-mobile-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
