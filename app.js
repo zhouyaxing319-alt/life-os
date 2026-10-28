@@ -1,113 +1,65 @@
 'use strict';
-const ENDPOINT = 'https://fbtrxymjdgrysfclqsaz.supabase.co';
-const PUBLIC_KEY = 'sb_publishable_q5Jns_kZYfOaODDluleOUg_ntqML3tY';
-const el = id => document.getElementById(id);
-let currentSession = null;
-let indexedDBReady;
-
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('lifeos-independent-test', 1);
-    request.onupgradeneeded = () => request.result.createObjectStore('events', {keyPath: 'operation_id'});
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
+const $ = id => document.getElementById(id);
+const dbReady = new Promise((resolve, reject) => {
+  const request = indexedDB.open('lifeos-mobile-records', 1);
+  request.onupgradeneeded = () => { request.result.createObjectStore('activities', {keyPath:'id'}); request.result.createObjectStore('sessions', {keyPath:'id'}); request.result.createObjectStore('reflections', {keyPath:'date'}); };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+const uuid = () => crypto.randomUUID();
+const now = () => new Date().toISOString();
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+let busy = false;
+function msg(text, error=false) { $('message').textContent=text; $('message').classList.toggle('error',error); }
+function requestValue(request) { return new Promise((resolve,reject) => { request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error); }); }
+async function read(store) { const db=await dbReady; return requestValue(db.transaction(store).objectStore(store).getAll()); }
+async function change(fn) {
+  if (busy) return false;
+  busy=true;
+  try {
+    const db=await dbReady;
+    await new Promise((resolve,reject) => {
+      const tx=db.transaction(['activities','sessions','reflections'],'readwrite');
+      tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error); tx.onabort=()=>reject(tx.error || new Error('保存失败'));
+      try { fn(tx); } catch (error) { tx.abort(); reject(error); }
+    });
+    await render();
+    return true;
+  } catch (error) { msg('保存失败，请检查手机存储空间。',true); return false; }
+  finally { busy=false; }
 }
-async function allEvents() {
-  const db = await indexedDBReady;
-  return new Promise((resolve, reject) => {
-    const req = db.transaction('events', 'readonly').objectStore('events').getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function stopOpen(tx, at, excludeSessionId=null) {
+  const sessions=tx.objectStore('sessions'), activities=tx.objectStore('activities');
+  const cursor=sessions.openCursor();
+  cursor.onsuccess=()=>{ const c=cursor.result; if (!c) return; const session=c.value;
+    if (!session.endedAt && session.id!==excludeSessionId) { session.endedAt=at; c.update(session); const req=activities.get(session.activityId); req.onsuccess=()=>{ if(req.result && req.result.status==='active'){const a=req.result;a.status='paused';a.updatedAt=at;activities.put(a);} }; }
+    c.continue();
+  };
 }
-async function saveEvent(event) {
-  const db = await indexedDBReady;
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction('events', 'readwrite');
-    tx.objectStore('events').put(event);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('本地保存失败'));
-  });
-}
-function message(text, error = false) {
-  el('message').textContent = text;
-  el('message').classList.toggle('error', error);
-}
-function updateNetwork() { el('network-state').textContent = navigator.onLine ? '网络可用' : '当前离线'; }
-function headers(token) {
-  return {'apikey': PUBLIC_KEY, 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'};
-}
+function formatDuration(ms) { const s=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60; return h ? `${h}小时 ${m}分 ${sec}秒` : `${m}分 ${sec}秒`; }
+function node(tag,text,cls) { const n=document.createElement(tag); if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n; }
+function button(text,cls,click) { const b=node('button',text,cls);b.type='button';b.addEventListener('click',click);return b; }
+function elapsed(a, sessions) { return sessions.filter(s=>s.activityId===a.id).reduce((sum,s)=>sum+Math.max(0,(s.endedAt?Date.parse(s.endedAt):Date.now())-Date.parse(s.startedAt)),0); }
+function endActivity(id, finish) { const at=now(); change(tx=>{ stopOpen(tx,at); const store=tx.objectStore('activities'),req=store.get(id); req.onsuccess=()=>{const a=req.result;if(a){a.status=finish?'completed':'paused';a.updatedAt=at;store.put(a);}}; }).then(ok=>{if(ok)msg(finish?'活动已结束，可以补充结果。':'活动已暂停，之后可以继续。');}); }
+function resume(id) { const at=now(),sessionId=uuid(); change(tx=>{stopOpen(tx,at,sessionId);const store=tx.objectStore('activities'),req=store.get(id);req.onsuccess=()=>{const a=req.result;if(!a||a.status!=='paused')return;a.status='active';a.updatedAt=at;store.put(a);tx.objectStore('sessions').add({id:sessionId,activityId:id,startedAt:at,endedAt:null});};}).then(ok=>{if(ok)msg('已继续活动。');}); }
 async function render() {
-  const events = await allEvents();
-  events.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  el('record-count').textContent = `${events.length} 条`;
-  el('records').replaceChildren();
-  if (!events.length) {
-    const empty = document.createElement('p'); empty.className = 'empty'; empty.textContent = '还没有测试记录'; el('records').append(empty);
+  const [activities,sessions,reflections]=await Promise.all([read('activities'),read('sessions'),read('reflections')]);
+  activities.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  const active=activities.find(a=>a.status==='active'); const current=$('current');current.replaceChildren();
+  $('active-indicator').textContent=active?'● 进行中':'● 等待开始';
+  if(!active) current.append(node('p','现在没有进行中的活动。','empty'));
+  else { current.append(node('div',active.name,'activity-name'));const timer=node('div',formatDuration(elapsed(active,sessions)),'timer');timer.dataset.timerId=active.id;current.append(timer,node('p',`${active.category||'未分类'} · 已记录在手机`, 'meta'));const actions=node('div',undefined,'actions');actions.append(button('暂停','secondary',()=>endActivity(active.id,false)),button('结束活动','quiet',()=>endActivity(active.id,true)));current.append(actions); }
+  $('count').textContent=`${activities.length} 项`;const list=$('activities');list.replaceChildren();
+  if(!activities.length) list.append(node('p','还没有活动，先开始一项吧。','empty'));
+  for(const a of activities){const item=node('article',undefined,'item'),head=node('div',undefined,'item-title');head.append(node('strong',a.name),node('span',({active:'进行中',paused:'已暂停',completed:'已结束'})[a.status]||a.status,'pill'));item.append(head);
+    const parts=[a.category||'未分类',`累计 ${formatDuration(elapsed(a,sessions))}`];if(a.plannedMinutes)parts.push(`预计 ${a.plannedMinutes} 分钟`);item.append(node('p',parts.join(' · '),'meta'));if(a.goal)item.append(node('p',`目标：${a.goal}`,'meta'));
+    const actions=node('div',undefined,'actions');if(a.status==='paused'){actions.append(button('继续','secondary',()=>resume(a.id)),button('结束','quiet',()=>endActivity(a.id,true)));}item.append(actions);
+    const details=node('details'),summary=node('summary','结果与证据','meta');details.append(summary);const form=node('form',undefined,'result-form');const result=node('textarea');result.placeholder='最终结果';result.rows=2;result.maxLength=5000;result.value=a.result||'';const evidence=node('textarea');evidence.placeholder='验证证据';evidence.rows=2;evidence.maxLength=5000;evidence.value=a.evidence||'';const save=node('button','保存结果','secondary');save.type='submit';form.append(result,evidence,save);form.addEventListener('submit',e=>{e.preventDefault();const resultText=result.value,evidenceText=evidence.value;change(tx=>{const store=tx.objectStore('activities'),req=store.get(a.id);req.onsuccess=()=>{const activity=req.result;if(activity){activity.result=resultText;activity.evidence=evidenceText;activity.updatedAt=now();store.put(activity);}};}).then(ok=>{if(ok)msg('结果和证据已保存在手机。');});});details.append(form);item.append(details);list.append(item);
   }
-  const labels = {local: '已存手机／浏览器', uploaded: '已上传，等待电脑', saved_pending: '已存电脑，等待清理', completed: '已存电脑，中转已清理'};
-  for (const event of events) {
-    const row = document.createElement('div'); row.className = 'record';
-    const left = document.createElement('div');
-    const name = document.createElement('strong'); name.textContent = event.payload.name;
-    const time = document.createElement('small'); time.textContent = new Date(event.created_at).toLocaleString('zh-CN');
-    left.append(name, time);
-    const state = document.createElement('span'); state.className = 'record-status'; state.textContent = labels[event.status] || '状态未知';
-    row.append(left, state); el('records').append(row);
-  }
-
+  if(document.activeElement!==$('reflection')) $('reflection').value=reflections.find(r=>r.date===today())?.content||'';
 }
-
-el('login-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const email = form.elements.email.value.trim();
-  const password = form.elements.password.value;
-  el('login-button').disabled = true;
-  try {
-    const response = await fetch(`${ENDPOINT}/auth/v1/token?grant_type=password`, {method:'POST', headers: {'apikey':PUBLIC_KEY, 'Content-Type':'application/json'}, body:JSON.stringify({email, password})});
-    const result = await response.json();
-    if (!response.ok || !result.access_token || !result.user?.id) throw new Error('登录失败，请检查邮箱和密码');
-    currentSession = {token:result.access_token, owner:result.user.id};
-    form.reset(); form.hidden = true; el('logout-button').hidden = false;
-    el('login-state').textContent = '已登录';
-    message('登录成功。现在可以生成并上传一条虚拟记录。');
-  } catch (error) { message(error.message || '登录失败，请检查网络', true); }
-  finally { form.elements.password.value = ''; el('login-button').disabled = false; }
-});
-el('logout-button').addEventListener('click', () => {
-  currentSession = null; el('login-form').hidden = false; el('logout-button').hidden = true; el('login-state').textContent = '未登录';
-  message('已从本次测试退出。');
-});
-el('create-button').addEventListener('click', async () => {
-  try {
-    const now = new Date();
-    const event = {operation_id:crypto.randomUUID(), entity_id:crypto.randomUUID(), entity_version:1, entity_type:'lifeos_test_activity', created_at:now.toISOString(), status:'local', payload:{name:'模拟学习 JavaScript', planned_minutes:60, actual_minutes:30, ended_at:now.toISOString(), test_only:true}};
-    await saveEvent(event); await render(); message('虚拟记录已保存在当前浏览器。');
-  } catch { message('本地保存失败，请检查浏览器存储空间。', true); }
-});
-el('upload-button').addEventListener('click', async () => {
-  if (!currentSession) return message('请先登录 Life OS 账户。', true);
-  const button = el('upload-button'); button.disabled = true;
-  try {
-    const pending = (await allEvents()).filter(item => item.status === 'local');
-    if (!pending.length) return message('没有等待上传的测试记录。');
-    for (const item of pending) {
-      const record = {operation_id:item.operation_id, owner_id:currentSession.owner, entity_type:item.entity_type, entity_id:item.entity_id, entity_version:item.entity_version, payload:item.payload};
-      const response = await fetch(`${ENDPOINT}/rest/v1/relay_inbox`, {method:'POST', headers:{...headers(currentSession.token), 'Prefer':'return=minimal'}, body:JSON.stringify(record)});
-      if (response.status === 409) {
-        const check = await fetch(`${ENDPOINT}/rest/v1/relay_inbox?operation_id=eq.${encodeURIComponent(item.operation_id)}&select=operation_id,owner_id,entity_id,entity_version,entity_type,payload`, {headers:headers(currentSession.token)});
-        const rows = await check.json();
-        if (!check.ok || rows.length !== 1 || rows[0].owner_id !== record.owner_id || rows[0].entity_id !== record.entity_id || rows[0].entity_version !== record.entity_version || rows[0].entity_type !== record.entity_type || JSON.stringify(rows[0].payload, Object.keys(rows[0].payload).sort()) !== JSON.stringify(record.payload, Object.keys(record.payload).sort())) throw new Error('重复编号的记录不一致，请停止测试');
-      } else if (!response.ok) throw new Error(response.status === 401 ? '登录已失效，请重新登录' : '上传失败，记录仍保存在本地');
-      item.status = 'uploaded'; await saveEvent(item);
-    }
-    await render(); message(`已上传 ${pending.length} 条测试记录，等待电脑接收。`);
-  } catch (error) { message(error.message || '上传失败，记录仍保存在本地。', true); }
-  finally { button.disabled = false; }
-});
-window.addEventListener('online', updateNetwork); window.addEventListener('offline', updateNetwork);
-indexedDBReady = openDatabase(); updateNetwork();
-indexedDBReady.then(render).catch(() => message('浏览器存储不可用，无法进行测试。', true));
+$('start-form').addEventListener('submit',e=>{e.preventDefault();const form=e.currentTarget,at=now(),name=form.elements.name.value.trim();if(!name)return;const planned=form.elements.planned.value,sessionId=uuid();const activity={id:uuid(),name,category:form.elements.category.value.trim(),plannedMinutes:planned?Number(planned):null,goal:form.elements.goal.value.trim(),status:'active',createdAt:at,updatedAt:at};change(tx=>{stopOpen(tx,at,sessionId);tx.objectStore('activities').add(activity);tx.objectStore('sessions').add({id:sessionId,activityId:activity.id,startedAt:at,endedAt:null});}).then(ok=>{if(ok){form.reset();msg('活动已开始，记录保存在手机。');}});});
+$('save-reflection').addEventListener('click',()=>{const content=$('reflection').value;change(tx=>tx.objectStore('reflections').put({date:today(),content,updatedAt:now()})).then(ok=>{if(ok)msg('心得已保存在手机。');});});
+dbReady.then(render).catch(()=>msg('手机存储不可用，请检查浏览器设置。',true));
+setInterval(async()=>{const timer=document.querySelector('[data-timer-id]');if(!timer)return;try{const [activities,sessions]=await Promise.all([read('activities'),read('sessions')]);const a=activities.find(x=>x.id===timer.dataset.timerId);if(a)timer.textContent=formatDuration(elapsed(a,sessions));}catch{}},1000);
+if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});

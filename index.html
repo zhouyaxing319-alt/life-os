@@ -1,62 +1,13 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>Life OS · 同步测试</title>
-  <link rel="stylesheet" href="./style.css">
-  <script defer src="./app.js"></script>
-</head>
-<body>
-  <main class="layout">
-    <header class="header">
-      <div class="brand"><span class="brand-mark">L</span><span>Life OS <small>独立测试版</small></span></div>
-      <span class="badge"><span class="dot"></span> 手机测试</span>
-    </header>
-
-    <section class="intro">
-      <p class="eyebrow">LOCAL FIRST · PRIVATE BY DESIGN</p>
-      <h1>一条记录，<br><span>走完整个流程。</span></h1>
-      <p>先用一条虚拟活动，验证手机记录、中转接收与电脑保存。</p>
-    </section>
-
-    <section class="notice" aria-label="测试说明">
-      <span class="notice-icon">i</span>
-      <div><strong>这是独立测试环境</strong><p>请仅使用虚拟数据。仅供虚拟数据测试，正式记录功能尚未开放。</p></div>
-    </section>
-
-    <section class="panel" id="auth-panel">
-      <div class="section-title"><div><p class="eyebrow">STEP 01</p><h2>连接中转站</h2></div><span id="login-state" class="status">未登录</span></div>
-      <p class="caption">使用你创建的 Life OS 登录账户。密码只发送给 Supabase，不保存在本机程序中。</p>
-      <form id="login-form">
-        <label>邮箱 <input name="email" type="email" placeholder="你的登录邮箱" autocomplete="username" required></label>
-        <label>密码 <input name="password" type="password" placeholder="Life OS 登录密码" autocomplete="current-password" required></label>
-        <button class="primary" id="login-button" type="submit">安全登录</button>
-      </form>
-      <button class="text-button" id="logout-button" type="button" hidden>退出登录</button>
-    </section>
-
-    <section class="panel">
-      <div class="section-title"><div><p class="eyebrow">STEP 02</p><h2>生成测试记录</h2></div><span class="pill">虚拟数据</span></div>
-      <div class="sample"><div class="sample-icon">✦</div><div><strong>模拟学习 JavaScript</strong><p>预计 60 分钟 · 实际 30 分钟</p></div><span>30 <small>分钟</small></span></div>
-      <button class="secondary" id="create-button" type="button">生成一条测试记录</button>
-      <p class="caption">记录会先保存在当前浏览器，网络不稳定时仍保留。</p>
-    </section>
-
-    <section class="panel">
-      <div class="section-title"><div><p class="eyebrow">STEP 03</p><h2>测试同步</h2></div><span id="network-state" class="status">检查网络中</span></div>
-      <div class="flow" aria-label="同步流程"><div><span>1</span><strong>本地记录</strong></div><i></i><div><span>2</span><strong>中转站</strong></div><i></i><div><span>3</span><strong>电脑数据库</strong></div></div>
-      <div class="actions"><button class="primary" id="upload-button" type="button">上传到中转站</button></div>
-      <div id="message" class="message" role="status" aria-live="polite">准备就绪，请先登录并生成测试记录。</div>
-    </section>
-
-    <section class="panel records-panel">
-      <div class="section-title"><div><p class="eyebrow">TEST RECORDS</p><h2>本次测试记录</h2></div><span id="record-count" class="status">0 条</span></div>
-      <div id="records" class="records"><p class="empty">还没有测试记录</p></div>
-      <p class="caption" id="computer-count">请在电脑上的测试页面点击“电脑接收”。</p>
-    </section>
-    <footer>Life OS · 本地优先的个人成长记录</footer>
-  </main>
-</body>
-</html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#143c36"><meta name="apple-mobile-web-app-capable" content="yes"><title>Life OS · 我的记录</title><link rel="manifest" href="./manifest.webmanifest"><link rel="stylesheet" href="./style.css"><script defer src="./app.js"></script></head>
+<body><main class="app">
+<header><div><span class="brand">L</span><b>Life OS</b></div><span class="tag">手机体验版</span></header>
+<section class="hero"><p class="eyebrow">ONE DAY AT A TIME</p><h1>把时间，<br>留给重要的事。</h1><p>记录真实的每一步，慢慢看见变化。</p></section>
+<div class="notice"><b>记录暂存在这部手机</b><span>电脑同步尚未开通。清除浏览器数据可能丢失记录，请先用虚拟内容体验。</span></div>
+<p id="message" class="message" role="status" aria-live="polite"></p>
+<section class="card current"><div class="heading"><div><span class="eyebrow">RIGHT NOW</span><h2>正在进行</h2></div><span class="live" id="active-indicator">● 等待开始</span></div><div id="current"></div></section>
+<section class="card"><div class="heading"><div><span class="eyebrow">A NEW MOMENT</span><h2>开始一项活动</h2></div></div><form id="start-form"><label>活动名称<input name="name" maxlength="120" required placeholder="例如：学习 JavaScript"></label><div class="row"><label>分类<input name="category" maxlength="60" placeholder="例如：学习、休息" list="category-options"><datalist id="category-options"><option value="学习"><option value="工作"><option value="生活"><option value="健康"><option value="休息"></datalist></label><label>预计时长（分钟）<input name="planned" type="number" min="1" max="100000" inputmode="numeric" placeholder="可不填"></label></div><label>预期目标<textarea name="goal" rows="2" maxlength="2000" placeholder="这次想完成什么？（可不填）"></textarea></label><button class="primary" type="submit">开始活动 <span>→</span></button><small>如果正在进行其他活动，会先暂停它。</small></form></section>
+<section class="card"><div class="heading"><div><span class="eyebrow">YOUR TIMELINE</span><h2>我的活动</h2></div><span id="count" class="muted">0 项</span></div><div id="activities"></div></section>
+<section class="card"><div class="heading"><div><span class="eyebrow">A MOMENT FOR YOU</span><h2>今日心得</h2></div></div><label>写下你的想法<textarea id="reflection" rows="3" maxlength="5000" placeholder="今天有什么感受？"></textarea></label><button id="save-reflection" class="secondary" type="button">保存心得</button><small>只保存在本机，不会由 AI 修改。</small></section>
+<footer>Life OS · 记录过程，也关注结果</footer>
+</main></body></html>
